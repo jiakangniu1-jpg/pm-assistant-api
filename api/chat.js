@@ -1,20 +1,29 @@
 export default async function handler(req, res) {
-  try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Only POST allowed" });
-    }
+  /* ================= CORS 处理 ================= */
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
+  // 预检请求直接返回
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  /* ============================================ */
+
+  // 只允许 POST
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Only POST allowed" });
+  }
+
+  try {
     const { message } = req.body;
 
-    if (!message || typeof message !== "string") {
+    if (!message) {
       return res.status(400).json({ error: "message is required" });
     }
 
-    if (message.length > 2000) {
-      return res.status(400).json({ error: "message too long" });
-    }
-
-    const response = await fetch("https://api.deepseek.com/chat/completions", {
+    // 调用 DeepSeek
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -25,8 +34,7 @@ export default async function handler(req, res) {
         messages: [
           {
             role: "system",
-            content:
-              "你是一名经验丰富、直言不讳的产品经理助手。你的任务是指出需求中的逻辑漏洞、边界问题、风险点和模糊表达，不要讨好用户。"
+            content: "你是一名专业、理性、结构化表达的产品经理助手"
           },
           {
             role: "user",
@@ -36,17 +44,27 @@ export default async function handler(req, res) {
       })
     });
 
-    const data = await response.json();
-
-    if (!data.choices || !data.choices.length) {
-      throw new Error("Empty response from DeepSeek");
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(500).json({
+        error: "DeepSeek API error",
+        detail: errorText
+      });
     }
 
-    res.status(200).json({
-      reply: data.choices[0].message.content
+    const data = await response.json();
+
+    const reply =
+      data?.choices?.[0]?.message?.content || "未获取到有效回复";
+
+    return res.json({
+      reply
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Server error" });
+    return res.status(500).json({
+      error: "Server error",
+      detail: err.message
+    });
   }
 }
