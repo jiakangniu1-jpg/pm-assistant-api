@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  // ===== CORS =====
+  // 1️⃣ CORS（必须）
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -12,64 +12,65 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Only POST allowed" });
   }
 
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: "DEEPSEEK_API_KEY is missing" });
+  }
+
+  const { message } = req.body;
+
+  // 2️⃣ 设置为流式响应
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Transfer-Encoding", "chunked");
+
   try {
-    const { message } = req.body;
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        stream: true,
+        messages: [
+          { role: "system", content: "你是一名专业的产品经理助手" },
+          { role: "user", content: message },
+        ],
+      }),
+    });
 
-    if (!message) {
-      return res.status(400).json({ error: "message is required" });
-    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
 
-    // 🔍 关键调试点 1：环境变量
-    if (!process.env.DEEPSEEK_API_KEY) {
-      return res.status(500).json({
-        error: "DEEPSEEK_API_KEY is missing"
-      });
-    }
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
 
-    const response = await fetch(
-      "https://api.deepseek.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [
-            {
-              role: "system",
-              content: "你是一名专业、结构化思考的产品经理助手"
-            },
-            {
-              role: "user",
-              content: message
-            }
-          ]
-        })
+      const chunk = decoder.decode(value, { stream: true });
+
+      // DeepSeek 返回的是 SSE，需要拆
+      const lines = chunk.split("\n");
+
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        if (line.includes("[DONE]")) continue;
+
+        try {
+          const json = JSON.parse(line.replace("data:", "").trim());
+          const content = json.choices?.[0]?.delta?.content;
+          if (content) {
+            res.write(content);
+          }
+        } catch (e) {
+          // 忽略解析失败
+        }
       }
-    );
-
-    // 🔍 关键调试点 2：DeepSeek 返回是否正常
-    if (!response.ok) {
-      const text = await response.text();
-      return res.status(500).json({
-        error: "DeepSeek API error",
-        status: response.status,
-        detail: text
-      });
     }
 
-    const data = await response.json();
-
-    return res.json({
-      reply: data?.choices?.[0]?.message?.content
-    });
+    res.end();
   } catch (err) {
-    return res.status(500).json({
-      error: "Server exception",
-      detail: err.message
-    });
+    res.write("\n\n[出错了，请稍后再试]");
+    res.end();
   }
 }
-
