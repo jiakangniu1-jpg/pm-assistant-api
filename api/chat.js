@@ -5,25 +5,37 @@ export const config = {
 };
 
 export default async function handler(req, res) {
+  // CORS 预检
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
     return res.status(405).json({ error: "Only POST allowed" });
   }
 
   const { messages } = req.body;
 
   if (!messages) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
     return res.status(400).json({ error: "messages is required" });
   }
 
   if (!process.env.DEEPSEEK_API_KEY) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
     return res.status(500).json({ error: "DEEPSEEK_API_KEY is missing" });
   }
 
-  // 关键：SSE 头
+  // 关键：SSE 头 + CORS
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
+    "Access-Control-Allow-Origin": "*",
   });
   res.flushHeaders?.();
 
@@ -86,4 +98,3 @@ export default async function handler(req, res) {
   res.write(`event: end\ndata: [DONE]\n\n`);
   res.end();
 }
-
