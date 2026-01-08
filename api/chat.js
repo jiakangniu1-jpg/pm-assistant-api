@@ -1,5 +1,4 @@
-import fetch from "node-fetch";
-
+// Node 18+ 自带 fetch，这里无需额外依赖
 export const config = {
   runtime: "nodejs",
 };
@@ -104,3 +103,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: "server error", detail: err.message });
   }
 }
+
